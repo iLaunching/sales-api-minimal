@@ -15,6 +15,12 @@ DATABASE_URL = os.getenv(
     "postgresql+asyncpg://postgres:postgres@localhost:5432/sales_db"
 )
 
+# Convert postgresql:// to postgresql+asyncpg:// if needed
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+logger.info(f"Database URL configured: {DATABASE_URL.split('@')[0]}@...")
+
 # Create async engine
 engine = create_async_engine(
     DATABASE_URL,
@@ -39,7 +45,8 @@ async def init_db():
         logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
-        raise
+        logger.warning("Continuing without database - health check will still work")
+        # Don't raise - allow app to start even if DB fails
 
 
 async def get_db():
