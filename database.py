@@ -21,20 +21,27 @@ if DATABASE_URL.startswith("postgresql://"):
 
 logger.info(f"Database URL configured: {DATABASE_URL.split('@')[0]}@...")
 
-# Create async engine
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,  # Set to True for SQL query logging
-    pool_size=5,
-    max_overflow=10
-)
+# Create async engine with connection pool settings
+try:
+    engine = create_async_engine(
+        DATABASE_URL,
+        echo=False,  # Set to True for SQL query logging
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,  # Verify connections before using
+    )
 
-# Create async session maker
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
+    # Create async session maker
+    AsyncSessionLocal = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+    logger.info("Database engine created successfully")
+except Exception as e:
+    logger.error(f"Failed to create database engine: {e}")
+    engine = None
+    AsyncSessionLocal = None
 
 
 async def init_db():
