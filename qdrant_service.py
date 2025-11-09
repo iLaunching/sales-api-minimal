@@ -24,7 +24,7 @@ if QDRANT_URL:
         qdrant_client = QdrantClient(
             url=QDRANT_URL,
             api_key=QDRANT_API_KEY,
-            timeout=10,  # Reduced timeout
+            timeout=60,  # Increased timeout for Railway-to-Railway connections
             prefer_grpc=False  # Use HTTP for better compatibility
         )
         logger.info("Qdrant client initialized successfully")
