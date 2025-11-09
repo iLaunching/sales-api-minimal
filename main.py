@@ -1,5 +1,5 @@
 """
-Minimal Sales API - PostgreSQL + Redis + AI + MCP
+Minimal Sales API - Full Stack with Vector Search
 """
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -15,6 +15,7 @@ from models import Conversation
 from redis_client import close_redis, cache_conversation, get_cached_conversation, invalidate_cache
 from llm_client import get_sales_response
 from mcp_client import handle_objection, get_pitch_template, calculate_value
+from qdrant_client import ensure_collection, get_qdrant_stats
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,6 +30,13 @@ async def lifespan(app: FastAPI):
         logger.info("Database initialized")
     except Exception as e:
         logger.warning(f"Database init failed: {e}. Running without DB.")
+    
+    try:
+        await ensure_collection()
+        logger.info("Qdrant collection ready")
+    except Exception as e:
+        logger.warning(f"Qdrant init failed: {e}. Running without vector search.")
+    
     yield
     logger.info("Shutting down...")
     await close_db()
@@ -36,8 +44,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Sales API - Full Stack with MCP",
-    version="1.4.0",
+    title="Sales API - Complete System",
+    version="1.5.0",
     lifespan=lifespan
 )
 
@@ -55,15 +63,20 @@ app.add_middleware(
 async def root():
     return {
         "service": "Sales API",
-        "version": "1.4.0",
+        "version": "1.5.0",
         "status": "running",
-        "features": ["PostgreSQL", "Redis", "AI", "MCP Tools", "Conversations", "Caching"]
+        "features": ["PostgreSQL", "Redis", "AI", "MCP Tools", "Qdrant", "Conversations", "Caching", "Vector Search"]
     }
 
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    """Health check with system status"""
+    qdrant_stats = get_qdrant_stats()
+    return {
+        "status": "healthy",
+        "qdrant": qdrant_stats if qdrant_stats else "unavailable"
+    }
 
 
 @app.post("/api/sales/conversations")

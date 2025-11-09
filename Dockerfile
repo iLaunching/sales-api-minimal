@@ -11,6 +11,7 @@ COPY database.py .
 COPY redis_client.py .
 COPY llm_client.py .
 COPY mcp_client.py .
+COPY qdrant_client.py .
 
 EXPOSE 8080
 
