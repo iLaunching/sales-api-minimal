@@ -23,20 +23,24 @@ if QDRANT_URL:
         logger.info(f"Initializing Qdrant client with URL: {QDRANT_URL}")
         logger.info(f"Qdrant API Key present: {bool(QDRANT_API_KEY)}")
         
-        # Try with very simple configuration first
+        # Configure client for Railway environment
         qdrant_client = QdrantClient(
             url=QDRANT_URL,
             api_key=QDRANT_API_KEY,
-            timeout=5,  # Short timeout - fail fast
-            prefer_grpc=False  # Use HTTP for better compatibility
+            timeout=120,  # Very long timeout for Railway-to-Railway
+            prefer_grpc=False,  # Use HTTP for better compatibility
+            https=QDRANT_URL.startswith('https://'),  # Auto-detect HTTPS
         )
         
-        # Test connection immediately
+        # Test connection immediately with extended timeout
         try:
+            import time
+            start = time.time()
             collections = qdrant_client.get_collections()
-            logger.info(f"Qdrant client connected successfully! Collections: {len(collections.collections)}")
+            elapsed = time.time() - start
+            logger.info(f"Qdrant connected successfully in {elapsed:.2f}s! Collections: {len(collections.collections)}")
         except Exception as conn_e:
-            logger.error(f"Qdrant client created but connection test failed: {conn_e}")
+            logger.error(f"Qdrant connection test failed after timeout: {type(conn_e).__name__}: {conn_e}")
             qdrant_client = None
             
     except Exception as e:
