@@ -85,14 +85,17 @@ async def get_ai_response(
                 logger.info(f"LLM response received: {len(ai_message)} chars")
                 return ai_message
             else:
-                logger.error(f"LLM Gateway error: {response.status_code} - {response.text}")
+                logger.error(f"LLM Gateway error: {response.status_code} - {response.text[:200]}")
                 return None
                 
     except httpx.TimeoutException:
-        logger.error("LLM Gateway timeout")
+        logger.error(f"LLM Gateway timeout after 60s - URL: {LLM_GATEWAY_URL}")
+        return None
+    except httpx.ConnectError as e:
+        logger.error(f"LLM Gateway connection error - URL: {LLM_GATEWAY_URL} - Error: {e}")
         return None
     except Exception as e:
-        logger.error(f"LLM Gateway request failed: {e}")
+        logger.error(f"LLM Gateway request failed - URL: {LLM_GATEWAY_URL} - Error: {type(e).__name__}: {e}")
         return None
 
 
