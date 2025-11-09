@@ -20,17 +20,19 @@ qdrant_client = None
 
 if QDRANT_URL:
     try:
+        logger.info(f"Initializing Qdrant client with URL: {QDRANT_URL}")
         qdrant_client = QdrantClient(
             url=QDRANT_URL,
             api_key=QDRANT_API_KEY,
-            timeout=30
+            timeout=10,  # Reduced timeout
+            prefer_grpc=False  # Use HTTP for better compatibility
         )
-        logger.info(f"Qdrant client initialized: {QDRANT_URL}")
+        logger.info("Qdrant client initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize Qdrant: {e}")
+        logger.warning(f"Failed to initialize Qdrant (continuing without it): {e}")
         qdrant_client = None
 else:
-    logger.warning("QDRANT_URL not set - semantic search unavailable")
+    logger.info("QDRANT_URL not set - semantic search unavailable")
 
 
 COLLECTION_NAME = "sales_knowledge"

@@ -24,8 +24,8 @@ REDIS_URL=redis://host:port
 LLM_GATEWAY_URL=https://your-llm-gateway.railway.app
 MCP_SERVER_URL=https://your-mcp-server.railway.app
 
-# Vector Search
-QDRANT_URL=https://your-qdrant.railway.app
+# Vector Search (Optional)
+QDRANT_URL=https://your-qdrant.railway.app  # Optional - enables vector search
 QDRANT_API_KEY=your-api-key  # Optional
 
 # LLM Config (Optional)
