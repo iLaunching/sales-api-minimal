@@ -21,15 +21,26 @@ qdrant_client = None
 if QDRANT_URL:
     try:
         logger.info(f"Initializing Qdrant client with URL: {QDRANT_URL}")
+        logger.info(f"Qdrant API Key present: {bool(QDRANT_API_KEY)}")
+        
+        # Try with very simple configuration first
         qdrant_client = QdrantClient(
             url=QDRANT_URL,
             api_key=QDRANT_API_KEY,
-            timeout=60,  # Increased timeout for Railway-to-Railway connections
+            timeout=5,  # Short timeout - fail fast
             prefer_grpc=False  # Use HTTP for better compatibility
         )
-        logger.info("Qdrant client initialized successfully")
+        
+        # Test connection immediately
+        try:
+            collections = qdrant_client.get_collections()
+            logger.info(f"Qdrant client connected successfully! Collections: {len(collections.collections)}")
+        except Exception as conn_e:
+            logger.error(f"Qdrant client created but connection test failed: {conn_e}")
+            qdrant_client = None
+            
     except Exception as e:
-        logger.warning(f"Failed to initialize Qdrant (continuing without it): {e}")
+        logger.error(f"Failed to initialize Qdrant client: {type(e).__name__}: {e}")
         qdrant_client = None
 else:
     logger.info("QDRANT_URL not set - semantic search unavailable")
