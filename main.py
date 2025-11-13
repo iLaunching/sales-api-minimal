@@ -17,6 +17,7 @@ from redis_client import close_redis, cache_conversation, get_cached_conversatio
 from llm_client import get_sales_response
 from mcp_client import handle_objection, get_pitch_template, calculate_value
 from qdrant_service import ensure_collection, get_qdrant_stats
+from content_processor import smart_chunk_content, analyze_content_complexity
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -372,38 +373,51 @@ async def process_and_stream_content(
     """
     Process content and stream chunks to client.
     
-    Phase 2.2 TODO: Add HTML sanitization, markdown parsing, smart chunking
-    For now: Simple implementation with basic chunking
+    Phase 2.2: Enhanced with smart content processing
+    - HTML sanitization
+    - Markdown to HTML conversion
+    - Intelligent chunking
+    - Adaptive speed calculation
     """
     try:
+        # Analyze content for optimal strategy
+        analysis = analyze_content_complexity(content)
+        logger.info(f"Content analysis: {analysis}")
+        
+        # Use adaptive speed if requested
+        if speed == "adaptive":
+            speed = analysis["recommended_speed"]
+            logger.info(f"Adaptive speed selected: {speed}")
+        
         # Speed preset delays (seconds)
         speed_delays = {
             "slow": 0.3,
             "normal": 0.1,
             "fast": 0.05,
-            "superfast": 0.03,
-            "adaptive": 0.1  # Will calculate based on content
+            "superfast": 0.03
         }
         delay = speed_delays.get(speed, 0.1)
         
-        # Simple chunking (Phase 2.2 will add smart chunking)
-        if chunk_by == "word":
-            chunks = content.split()
-            chunks = [chunk + " " for chunk in chunks]  # Preserve spaces
-        elif chunk_by == "character":
-            chunks = list(content)
-        elif chunk_by == "sentence":
-            # Simple sentence splitting
-            chunks = content.replace(". ", ".|").split("|")
-            chunks = [chunk.strip() + " " for chunk in chunks if chunk.strip()]
-        else:
-            chunks = [content]
+        # Smart chunking with content processing
+        chunks, metadata = smart_chunk_content(
+            content=content,
+            content_type=content_type,
+            chunk_by=chunk_by
+        )
         
-        # Send stream start event
+        logger.info(f"Processed content: {metadata['chunk_count']} chunks, complexity: {analysis['complexity']}")
+        
+        # Send stream start event with metadata
         await websocket.send_json({
             "type": "stream_start",
             "total_chunks": len(chunks),
             "content_type": content_type,
+            "metadata": {
+                "complexity": analysis["complexity"],
+                "word_count": analysis["word_count"],
+                "has_html": analysis["has_html"],
+                "speed_used": speed
+            },
             "timestamp": datetime.utcnow().isoformat()
         })
         
@@ -424,6 +438,7 @@ async def process_and_stream_content(
         await websocket.send_json({
             "type": "stream_complete",
             "total_chunks": len(chunks),
+            "metadata": metadata,
             "timestamp": datetime.utcnow().isoformat()
         })
         
