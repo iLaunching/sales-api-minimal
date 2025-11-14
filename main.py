@@ -658,7 +658,7 @@ async def process_and_stream_content(
         
         for i, chunk in enumerate(chunks):
             try:
-                # Check if stream should be skipped
+                # Check if stream should be skipped (check at start)
                 if stream_control.get("skip"):
                     logger.info("⏭️ Stream skipped, sending all remaining content")
                     # Send all remaining chunks immediately
@@ -672,9 +672,25 @@ async def process_and_stream_content(
                     sent_chunks += 1
                     break
                 
-                # Wait while paused
+                # Wait while paused (also check for skip during pause)
                 while stream_control.get("paused"):
+                    if stream_control.get("skip"):
+                        # Skip even while paused
+                        break
                     await asyncio.sleep(0.1)  # Check every 100ms
+                
+                # Check skip again after pause
+                if stream_control.get("skip"):
+                    logger.info("⏭️ Stream skipped after pause, sending all remaining content")
+                    remaining_content = "".join(chunks[i:])
+                    await websocket.send_json({
+                        "type": "chunk",
+                        "data": remaining_content,
+                        "index": sent_chunks,
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                    sent_chunks += 1
+                    break
                 
                 # Accumulate content
                 accumulated += chunk
@@ -709,7 +725,15 @@ async def process_and_stream_content(
                 # Throttle based on speed preset with backpressure detection
                 if i < len(chunks) - 1:  # Don't delay after last chunk
                     try:
-                        await asyncio.wait_for(asyncio.sleep(delay), timeout=5.0)
+                        # Break delay into smaller intervals to check skip flag
+                        elapsed = 0
+                        interval = 0.05  # Check every 50ms
+                        while elapsed < delay:
+                            if stream_control.get("skip"):
+                                # Exit delay immediately when skip triggered
+                                break
+                            await asyncio.sleep(min(interval, delay - elapsed))
+                            elapsed += interval
                     except asyncio.TimeoutError:
                         logger.warning("Backpressure detected, adjusting...")
                         delay = min(delay * 1.5, 1.0)  # Increase delay but cap at 1s
