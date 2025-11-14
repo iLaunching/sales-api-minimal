@@ -337,11 +337,28 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
     stream_control = {
         "paused": False,
         "skip": False,
-        "current_task": None
+        "current_task": None,
+        "message_queue": asyncio.Queue()
     }
     
     await websocket.accept()
     logger.info(f"✅ WebSocket connected: {session_id}")
+    
+    # Start background task to handle incoming messages
+    async def handle_incoming_messages():
+        """Background task to handle incoming WebSocket messages"""
+        while True:
+            try:
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=300.0)
+                await stream_control["message_queue"].put(data)
+            except asyncio.TimeoutError:
+                await stream_control["message_queue"].put({"type": "idle_timeout"})
+                break
+            except Exception as e:
+                logger.error(f"Error receiving message: {e}")
+                break
+    
+    message_handler_task = asyncio.create_task(handle_incoming_messages())
     
     try:
         # Send connection confirmation with limits
@@ -369,10 +386,14 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
                 })
                 break
             
-            # Receive with timeout
+            # Get message from queue
             try:
-                data = await asyncio.wait_for(websocket.receive_json(), timeout=300.0)
+                data = await asyncio.wait_for(stream_control["message_queue"].get(), timeout=1.0)
             except asyncio.TimeoutError:
+                # No message, continue loop
+                continue
+            
+            if data.get("type") == "idle_timeout":
                 logger.info(f"Session {session_id} idle timeout")
                 await websocket.send_json({
                     "type": "error",
@@ -433,15 +454,65 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
                 try:
                     stream_control["paused"] = False
                     stream_control["skip"] = False
-                    await process_and_stream_content(
-                        websocket=websocket,
-                        content=content,
-                        content_type=content_type,
-                        speed=speed,
-                        chunk_by=chunk_by,
-                        session_id=session_id,
-                        stream_control=stream_control
+                    
+                    # Create streaming task
+                    streaming_task = asyncio.create_task(
+                        process_and_stream_content(
+                            websocket=websocket,
+                            content=content,
+                            content_type=content_type,
+                            speed=speed,
+                            chunk_by=chunk_by,
+                            session_id=session_id,
+                            stream_control=stream_control
+                        )
                     )
+                    
+                    # Process control messages while streaming
+                    while not streaming_task.done():
+                        try:
+                            # Check for control messages without blocking
+                            control_msg = await asyncio.wait_for(
+                                stream_control["message_queue"].get(), 
+                                timeout=0.1
+                            )
+                            
+                            if control_msg.get("type") == "stream_control":
+                                action = control_msg.get("action")
+                                logger.info(f"🎮 Stream control during streaming: {action}")
+                                
+                                if action == "pause":
+                                    stream_control["paused"] = True
+                                    await websocket.send_json({
+                                        "type": "stream_paused",
+                                        "timestamp": datetime.utcnow().isoformat()
+                                    })
+                                elif action == "resume":
+                                    stream_control["paused"] = False
+                                    await websocket.send_json({
+                                        "type": "stream_resumed",
+                                        "timestamp": datetime.utcnow().isoformat()
+                                    })
+                                elif action == "skip":
+                                    stream_control["skip"] = True
+                                    await websocket.send_json({
+                                        "type": "stream_skipped",
+                                        "timestamp": datetime.utcnow().isoformat()
+                                    })
+                            else:
+                                # Put non-control messages back in queue
+                                await stream_control["message_queue"].put(control_msg)
+                                
+                        except asyncio.TimeoutError:
+                            # No control message, continue
+                            pass
+                        
+                        # Small delay to prevent busy loop
+                        await asyncio.sleep(0.05)
+                    
+                    # Wait for streaming to complete
+                    await streaming_task
+                    
                 except Exception as e:
                     logger.error(f"❌ Stream processing failed: {type(e).__name__}: {e}")
                     await websocket.send_json({
@@ -450,35 +521,6 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
                         "message": f"Failed to process content: {str(e)[:100]}"
                     })
             
-            elif data.get("type") == "stream_control":
-                action = data.get("action")
-                logger.info(f"🎮 Stream control: {action}")
-                
-                if action == "pause":
-                    stream_control["paused"] = True
-                    await websocket.send_json({
-                        "type": "stream_paused",
-                        "timestamp": datetime.utcnow().isoformat()
-                    })
-                elif action == "resume":
-                    stream_control["paused"] = False
-                    await websocket.send_json({
-                        "type": "stream_resumed",
-                        "timestamp": datetime.utcnow().isoformat()
-                    })
-                elif action == "skip":
-                    stream_control["skip"] = True
-                    await websocket.send_json({
-                        "type": "stream_skipped",
-                        "timestamp": datetime.utcnow().isoformat()
-                    })
-                else:
-                    await websocket.send_json({
-                        "type": "error",
-                        "code": "INVALID_CONTROL_ACTION",
-                        "message": f"action must be pause, resume, or skip"
-                    })
-                
             elif data.get("type") == "ping":
                 await websocket.send_json({
                     "type": "pong",
@@ -507,6 +549,7 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
             pass
     finally:
         # Cleanup
+        message_handler_task.cancel()
         logger.info(f"🧹 Cleaning up session: {session_id}")
 
 
