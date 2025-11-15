@@ -472,9 +472,9 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
                         process_and_stream_content(
                             websocket=websocket,
                             content=llm_response,  # Stream LLM response instead of user query
-                            content_type="html",  # LLM returns HTML
+                            content_type="markdown",  # LLM returns Markdown
                             speed=speed,
-                            chunk_by=chunk_by,
+                            chunk_by="paragraph",  # Always use paragraph chunks for stability
                             session_id=session_id,
                             stream_control=stream_control
                         )
