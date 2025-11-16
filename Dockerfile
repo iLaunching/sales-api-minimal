@@ -13,6 +13,7 @@ COPY llm_client.py .
 COPY mcp_client.py .
 COPY qdrant_service.py .
 COPY content_processor.py .
+COPY markdown_to_tiptap.py .
 
 EXPOSE 8080
 
