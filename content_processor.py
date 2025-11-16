@@ -492,15 +492,11 @@ def smart_chunk_content(
     original_type = content_type
     
     try:
-        # Step 1: Convert markdown to HTML if needed
+        # Step 1: Keep markdown as-is (DO NOT convert to HTML)
+        # The frontend Tiptap editor will handle markdown rendering
         if content_type == "markdown":
-            try:
-                content = markdown_to_html(content)
-                content_type = "html"
-                logger.info(f"Converted markdown to HTML: {original_length} → {len(content)} chars")
-            except Exception as e:
-                logger.error(f"Markdown conversion failed: {e}, treating as text")
-                content_type = "text"
+            logger.info(f"Keeping markdown format: {original_length} chars")
+            # No conversion needed - send raw markdown to frontend
         
         # Step 2: Sanitize HTML if applicable
         if content_type == "html":
