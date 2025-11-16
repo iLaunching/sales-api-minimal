@@ -19,6 +19,7 @@ from llm_client import get_sales_response
 from mcp_client import handle_objection, get_pitch_template, calculate_value
 from qdrant_service import ensure_collection, get_qdrant_stats
 from content_processor import smart_chunk_content, analyze_content_complexity
+from markdown_to_tiptap import convert_markdown_to_tiptap
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -464,23 +465,34 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
                         test_mode=test_mode
                     )
                     logger.info(f"✅ LLM response received: {len(llm_response)} chars")
+                    
+                    # Convert LLM markdown to Tiptap JSON nodes
+                    logger.info("🔄 Converting markdown to Tiptap JSON...")
+                    tiptap_nodes = convert_markdown_to_tiptap(llm_response)
+                    logger.info(f"✅ Converted to {len(tiptap_nodes)} Tiptap nodes")
+                    
                 except Exception as llm_error:
                     logger.error(f"❌ LLM call failed: {llm_error}")
-                    llm_response = "<p>I apologize, but I'm having trouble processing your request right now. Please try again in a moment.</p>"
+                    # Fallback to error message as paragraph node
+                    tiptap_nodes = [{
+                        "type": "paragraph",
+                        "content": [{
+                            "type": "text",
+                            "text": "I apologize, but I'm having trouble processing your request right now. Please try again in a moment."
+                        }]
+                    }]
                 
                 # Process and stream LLM response with error handling
                 try:
                     stream_control["paused"] = False
                     stream_control["skip"] = False
                     
-                    # Create streaming task with LLM response
+                    # Create streaming task with Tiptap JSON nodes
                     streaming_task = asyncio.create_task(
-                        process_and_stream_content(
+                        stream_tiptap_nodes(
                             websocket=websocket,
-                            content=llm_response,  # Stream LLM response instead of user query
-                            content_type="markdown",  # LLM returns Markdown
+                            nodes=tiptap_nodes,
                             speed=speed,
-                            chunk_by="paragraph",  # Always use paragraph chunks for stability
                             session_id=session_id,
                             stream_control=stream_control
                         )
@@ -569,6 +581,144 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
         # Cleanup
         message_handler_task.cancel()
         logger.info(f"🧹 Cleaning up session: {session_id}")
+
+
+async def stream_tiptap_nodes(
+    websocket: WebSocket,
+    nodes: list,
+    speed: str,
+    session_id: str = "unknown",
+    stream_control: dict = None
+):
+    """
+    Stream Tiptap JSON nodes directly to the client.
+    
+    Phase 1 & 2 Implementation:
+    - Receives parsed Tiptap JSON nodes from markdown converter
+    - Streams nodes one at a time with controlled timing
+    - Supports stream control (pause/resume/skip)
+    - Sends complete JSON structures (no parsing needed on frontend)
+    
+    Message Format:
+    - {"type": "stream_start", "total_nodes": N, "metadata": {...}}
+    - {"type": "node", "data": {...tiptap_node...}, "index": N}
+    - {"type": "stream_complete", "total_nodes": N}
+    
+    Args:
+        websocket: Active WebSocket connection
+        nodes: List of Tiptap JSON node dictionaries
+        speed: Speed preset ("slow"|"normal"|"fast"|"superfast")
+        session_id: Session identifier for logging
+        stream_control: Dict with pause/skip state
+    """
+    if stream_control is None:
+        stream_control = {"paused": False, "skip": False}
+    
+    try:
+        # Speed preset delays (seconds)
+        speed_delays = {
+            "slow": 0.5,
+            "normal": 0.2,
+            "fast": 0.1,
+            "superfast": 0.05
+        }
+        delay = speed_delays.get(speed, 0.2)
+        
+        logger.info(f"🎬 Starting Tiptap node stream: {len(nodes)} nodes, speed={speed}")
+        
+        # Send stream start event
+        await websocket.send_json({
+            "type": "stream_start",
+            "total_nodes": len(nodes),
+            "metadata": {
+                "node_count": len(nodes),
+                "speed_used": speed,
+                "format": "tiptap_json"
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        sent_nodes = 0
+        
+        for i, node in enumerate(nodes):
+            try:
+                # Check if stream should be skipped
+                if stream_control.get("skip"):
+                    logger.info("⏭️ Stream skipped, sending all remaining nodes")
+                    # Send all remaining nodes immediately
+                    for remaining_node in nodes[i:]:
+                        await websocket.send_json({
+                            "type": "node",
+                            "data": remaining_node,
+                            "index": sent_nodes,
+                            "timestamp": datetime.utcnow().isoformat()
+                        })
+                        sent_nodes += 1
+                    break
+                
+                # Wait while paused
+                while stream_control.get("paused"):
+                    if stream_control.get("skip"):
+                        break
+                    await asyncio.sleep(0.1)
+                
+                # Check skip again after pause
+                if stream_control.get("skip"):
+                    logger.info("⏭️ Stream skipped after pause")
+                    for remaining_node in nodes[i:]:
+                        await websocket.send_json({
+                            "type": "node",
+                            "data": remaining_node,
+                            "index": sent_nodes,
+                            "timestamp": datetime.utcnow().isoformat()
+                        })
+                        sent_nodes += 1
+                    break
+                
+                # Send the Tiptap JSON node
+                await websocket.send_json({
+                    "type": "node",
+                    "data": node,
+                    "index": sent_nodes,
+                    "shouldAnimate": True,  # Frontend can use this for animation control
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                sent_nodes += 1
+                logger.debug(f"Sent node {sent_nodes}/{len(nodes)}: {node.get('type', 'unknown')}")
+                
+                # Throttle based on speed preset
+                if i < len(nodes) - 1:  # Don't delay after last node
+                    elapsed = 0
+                    interval = 0.05  # Check every 50ms
+                    while elapsed < delay:
+                        if stream_control.get("skip"):
+                            break
+                        await asyncio.sleep(min(interval, delay - elapsed))
+                        elapsed += interval
+                        
+            except Exception as e:
+                logger.error(f"Error sending node {i}: {type(e).__name__}: {e}")
+                continue
+        
+        # Stream complete
+        await websocket.send_json({
+            "type": "stream_complete",
+            "total_nodes": sent_nodes,
+            "session_id": session_id,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        logger.info(f"✅ Tiptap stream complete: {sent_nodes} nodes sent for session {session_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Tiptap stream error: {type(e).__name__}: {e}", exc_info=True)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "code": "STREAM_ERROR",
+                "message": f"Streaming failed: {str(e)[:100]}"
+            })
+        except:
+            pass
 
 
 async def process_and_stream_content(
