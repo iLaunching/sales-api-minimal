@@ -14,6 +14,6 @@
     "LLM_GATEWAY_URL": "https://ilaunching-llm-server-production.up.railway.app",
     "LLM_MODEL": "gpt-4o-mini",
     "LLM_TEMPERATURE": "0.7",
-    "LLM_MAX_TOKENS": "4000"
+    "LLM_MAX_TOKENS": "3000"
   }
 }

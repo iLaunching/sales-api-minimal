@@ -6,6 +6,7 @@ import httpx
 import os
 import logging
 from typing import List, Dict, Optional
+from constants.system_messages import SYSTEM_MESSAGE_TYPES, get_system_message_response
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ if not LLM_GATEWAY_URL:
 # Model configuration from environment
 DEFAULT_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 DEFAULT_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
-DEFAULT_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4000"))
+DEFAULT_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "3000"))
 
 # Sales-specific system prompt
 SALES_SYSTEM_PROMPT = """You are an expert B2B sales assistant specializing in the iLaunching platform. 
@@ -265,8 +266,18 @@ async def get_sales_response(
         test_mode: If True, use test mode for demonstrating formats
     
     Returns:
-        AI-generated sales response
+        AI-generated sales response or system message
     """
+    
+    # Check if this is a system message request
+    if user_message in SYSTEM_MESSAGE_TYPES.values():
+        logger.info(f"🔔 System message detected: {user_message}")
+        system_response = get_system_message_response(user_message)
+        return system_response.get("message", "Hello! How can I help you today?")
+    
+    # Otherwise, continue with normal LLM processing
+    logger.info(f"💬 Processing user message with LLM: {user_message[:50]}...")
+    
     # Build message list from history
     messages = []
     for msg in conversation_history:
