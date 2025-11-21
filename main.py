@@ -466,10 +466,27 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
                     )
                     logger.info(f"✅ LLM response received: {len(llm_response)} chars")
                     
+                    # Verify we got valid content
+                    if not llm_response or not isinstance(llm_response, str):
+                        logger.error(f"❌ Invalid LLM response type: {type(llm_response)}")
+                        raise ValueError("Invalid LLM response")
+                    
                     # Convert LLM markdown to Tiptap JSON nodes
                     logger.info("🔄 Converting markdown to Tiptap JSON...")
-                    tiptap_nodes = convert_markdown_to_tiptap(llm_response)
-                    logger.info(f"✅ Converted to {len(tiptap_nodes)} Tiptap nodes")
+                    try:
+                        tiptap_nodes = convert_markdown_to_tiptap(llm_response)
+                        logger.info(f"✅ Converted to {len(tiptap_nodes)} Tiptap nodes")
+                    except Exception as convert_error:
+                        logger.error(f"❌ Markdown conversion failed: {convert_error}", exc_info=True)
+                        # Fallback: create simple paragraph node with raw text
+                        tiptap_nodes = [{
+                            "type": "paragraph",
+                            "content": [{
+                                "type": "text",
+                                "text": llm_response
+                            }]
+                        }]
+                        logger.info("⚠️ Using fallback paragraph node")
                     
                 except Exception as llm_error:
                     logger.error(f"❌ LLM call failed: {llm_error}", exc_info=True)

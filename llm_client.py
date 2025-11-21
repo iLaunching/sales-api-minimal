@@ -291,10 +291,16 @@ async def get_sales_response(
             system_response = get_system_message_response(base_message, user_name)
             message_content = system_response.get("message", "Hello! How can I help you today?")
             logger.info(f"📤 Returning system message: {len(message_content)} chars")
+            
+            # Verify we have valid content before returning
+            if not message_content or not isinstance(message_content, str):
+                logger.error(f"❌ System message returned invalid content: {type(message_content)}")
+                return "Welcome! I'm here to help you. Let's get started - what brings you here today?"
+            
             return message_content
         except Exception as sys_error:
             logger.error(f"❌ System message generation failed: {sys_error}", exc_info=True)
-            # Return a safe fallback
+            # Return a safe fallback - don't let it fall through to LLM
             return "Welcome! I'm here to help you. Let's get started - what brings you here today?"
     else:
         logger.info(f"⚠️ NOT a system message. Base message '{base_message}' not in system types.")
