@@ -405,6 +405,15 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
                 })
                 break
             
+            if data.get("type") == "heartbeat":
+                # Heartbeat keep-alive from client
+                await websocket.send_json({
+                    "type": "heartbeat_ack",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "session_id": session_id
+                })
+                continue
+            
             if data.get("type") == "stream_request":
                 request_count += 1
                 
