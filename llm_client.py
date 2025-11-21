@@ -233,10 +233,11 @@ async def get_ai_response(
             if response.status_code == 200:
                 data = response.json()
                 ai_message = data.get("content", "")
-                logger.info(f"LLM response received: {len(ai_message)} chars")
+                logger.info(f"✅ LLM Gateway success: {len(ai_message)} chars")
                 return ai_message
             else:
-                logger.error(f"LLM Gateway error: {response.status_code} - {response.text[:200]}")
+                logger.error(f"❌ LLM Gateway HTTP error: {response.status_code}")
+                logger.error(f"Response body: {response.text[:500]}")
                 return None
                 
     except httpx.TimeoutException:
@@ -271,14 +272,32 @@ async def get_sales_response(
     
     # Check if this is a system message request
     # Format: __SYSTEM_MESSAGE_TYPE__|USER:Name or just __SYSTEM_MESSAGE_TYPE__
-    message_parts = user_message.split('|USER:', 1)
-    base_message = message_parts[0]
-    user_name = message_parts[1] if len(message_parts) > 1 else ''
+    
+    # Trim whitespace from user message to avoid match failures
+    user_message_clean = user_message.strip()
+    
+    logger.info(f"📨 Incoming message: '{user_message_clean[:100]}...'")
+    logger.info(f"🔍 System message types available: {list(SYSTEM_MESSAGE_TYPES.values())}")
+    
+    message_parts = user_message_clean.split('|USER:', 1)
+    base_message = message_parts[0].strip()
+    user_name = message_parts[1].strip() if len(message_parts) > 1 else ''
+    
+    logger.info(f"🔎 Parsed - base_message: '{base_message}', user_name: '{user_name}'")
     
     if base_message in SYSTEM_MESSAGE_TYPES.values():
-        logger.info(f"🔔 System message detected: {base_message}, user: {user_name}")
-        system_response = get_system_message_response(base_message, user_name)
-        return system_response.get("message", "Hello! How can I help you today?")
+        logger.info(f"✅ System message MATCHED: {base_message}, user: {user_name}")
+        try:
+            system_response = get_system_message_response(base_message, user_name)
+            message_content = system_response.get("message", "Hello! How can I help you today?")
+            logger.info(f"📤 Returning system message: {len(message_content)} chars")
+            return message_content
+        except Exception as sys_error:
+            logger.error(f"❌ System message generation failed: {sys_error}", exc_info=True)
+            # Return a safe fallback
+            return "Welcome! I'm here to help you. Let's get started - what brings you here today?"
+    else:
+        logger.info(f"⚠️ NOT a system message. Base message '{base_message}' not in system types.")
     
     # Otherwise, continue with normal LLM processing
     logger.info(f"💬 Processing user message with LLM: {user_message[:50]}...")
@@ -309,7 +328,8 @@ async def get_sales_response(
     
     # Fallback if LLM fails
     if not response:
-        logger.warning("LLM failed, using fallback response")
+        logger.warning("⚠️ LLM returned no response, using fallback")
         return "Thank you for your message. I'm having trouble connecting right now. Could you please tell me more about what you're looking for, and I'll get back to you shortly?"
     
+    logger.info(f"✅ LLM response successful: {len(response)} chars")
     return response

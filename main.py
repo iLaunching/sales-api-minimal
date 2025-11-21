@@ -472,7 +472,8 @@ async def stream_content_websocket(websocket: WebSocket, session_id: str):
                     logger.info(f"✅ Converted to {len(tiptap_nodes)} Tiptap nodes")
                     
                 except Exception as llm_error:
-                    logger.error(f"❌ LLM call failed: {llm_error}")
+                    logger.error(f"❌ LLM call failed: {llm_error}", exc_info=True)
+                    logger.error(f"Original content was: {content[:200]}...")
                     # Fallback to error message as paragraph node
                     tiptap_nodes = [{
                         "type": "paragraph",
