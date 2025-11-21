@@ -270,9 +270,14 @@ async def get_sales_response(
     """
     
     # Check if this is a system message request
-    if user_message in SYSTEM_MESSAGE_TYPES.values():
-        logger.info(f"🔔 System message detected: {user_message}")
-        system_response = get_system_message_response(user_message)
+    # Format: __SYSTEM_MESSAGE_TYPE__|USER:Name or just __SYSTEM_MESSAGE_TYPE__
+    message_parts = user_message.split('|USER:', 1)
+    base_message = message_parts[0]
+    user_name = message_parts[1] if len(message_parts) > 1 else ''
+    
+    if base_message in SYSTEM_MESSAGE_TYPES.values():
+        logger.info(f"🔔 System message detected: {base_message}, user: {user_name}")
+        system_response = get_system_message_response(base_message, user_name)
         return system_response.get("message", "Hello! How can I help you today?")
     
     # Otherwise, continue with normal LLM processing

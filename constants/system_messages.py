@@ -100,21 +100,36 @@ I'm thrilled to work with you on bringing your idea to life.
 ]
 
 
-def get_random_welcome_message() -> str:
-    """Get a random welcome message"""
-    return random.choice(SALES_WELCOME_MESSAGES)
+def get_random_welcome_message(user_name: str = '') -> str:
+    """Get a random welcome message, personalized with user's name if provided"""
+    message = random.choice(SALES_WELCOME_MESSAGES)
+    
+    # Personalize the greeting if we have a name
+    if user_name:
+        # Replace generic greetings with personalized ones
+        message = message.replace('# Welcome!', f'# Welcome, {user_name}!')
+        message = message.replace('# Hey there!', f'# Hey {user_name}!')
+        message = message.replace('# Ready to Launch?', f'# Ready to Launch, {user_name}?')
+        message = message.replace('# Hi!', f'# Hi {user_name}!')
+    
+    return message
 
 
-def get_system_message_response(message_type: str, metadata: Dict[str, Any] = None) -> Dict[str, Any]:
+def get_system_message_response(message_type: str, user_name: str = '', metadata: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Get system message response based on type
     Returns response in the same format as LLM responses
+    
+    Args:
+        message_type: Type of system message (e.g., SALES_WELCOME)
+        user_name: User's name for personalization
+        metadata: Additional metadata
     """
     metadata = metadata or {}
     
     if message_type == SYSTEM_MESSAGE_TYPES['SALES_WELCOME']:
         return {
-            "message": get_random_welcome_message(),
+            "message": get_random_welcome_message(user_name),
             "stage": "discovery",
             "extracted_data": {},
             "ui_commands": [
